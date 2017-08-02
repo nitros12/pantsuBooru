@@ -1,0 +1,3 @@
+git+https://github.com/SunDwarf/Kyoukai
+git+https://github.com/SunDwarf/asyncqlio
+passlib
