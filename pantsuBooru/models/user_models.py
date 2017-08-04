@@ -1,5 +1,5 @@
 from asyncqlio.orm.schema.column import Column
-from asyncqlio.orm.schema.relationship import ForeignKey, Relationship
+from asyncqlio.orm.schema.relationship import Relationship
 from asyncqlio.orm.schema.table import table_base
 from asyncqlio.orm.schema.types import Integer, Text, Timestamp
 
@@ -11,6 +11,17 @@ class User(Table):
     joined_at = Column(Timestamp)
     username = Column(Text, nullable=False, unique=True)
     email = Column(Text, nullable=False, unique=True)
-    password_hash = Column(Text, nullable=False)
+    password = Column(Text, nullable=False)
     posted_images = Relationship(id, "Image.poster")
     posted_comments = Relationship(id, "Comment.poster")
+
+
+"""
+CREATE TABLE "user" (
+    id SERIAL PRIMARY KEY,
+    joined_at TIMESTAMP,
+    username TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL
+);
+"""

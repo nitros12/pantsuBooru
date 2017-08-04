@@ -11,7 +11,8 @@ Table = table_base("pantsu_booru")
 class Image(Table):
     id = Column(Integer, primary_key=True, autoincrement=True)
     posted_at = Column(Timestamp)
-    author = Column(Text, nullable=False)
+    author = Column(Text)
+    source = Column(Text)
     poster = Column(Integer, foreign_key=ForeignKey(User.id))
     tags = Relationship(id, 'Tag.image_id')
     comments = Relationship(id, 'Comment.image_id')
@@ -36,3 +37,27 @@ class Comment(Table):
     image_id = Column(Integer, foreign_key=ForeignKey(Image.id))
     poster = Column(Integer, foreign_key=ForeignKey(User.id))
     text = Column(Text)
+
+
+"""
+CREATE TABLE "image" (
+    id SERIAL PRIMARY KEY,
+    posted_at TIMESTAMP,
+    author TEXT,
+    source TEXT,
+    poster INTEGER REFERENCES "user" (id) ON DELETE CASCADE
+);
+
+CREATE TABLE "tag" (
+    id SERIAL PRIMARY KEY,
+    image_id INTEGER REFERENCES "image" (id) ON DELETE CASCADE,
+    tag TEXT
+);
+
+CREATE TABLE "comment" (
+    id SERIAL PRIMARY KEY,
+    image_id INTEGER REFERENCES "image" (id) ON DELETE CASCADE,
+    poster INTEGER REFERENCES "user" (id) ON DELETE CASCADE,
+    text TEXT
+);
+"""
