@@ -1,24 +1,20 @@
-import asyncio
 from datetime import datetime
 from typing import Optional
 
-from asyncqlio.db import DatabaseInterface
-from asyncqlio.orm.operators import Or
 from passlib.hash import bcrypt
 
 from pantsuBooru.backend.exceptions import UserExists
 from pantsuBooru.models import User
 
+from .utils import BaseDatabase, make_comp_search
 
-class UserDB:
-    def __init__(self, db: DatabaseInterface, loop=None):
-        self.db = db
-        self.loop = asyncio.get_event_loop()
+
+class UserDB(BaseDatabase):
 
     def hash_password(self, password: str):
         """Hash a password with bcrypt.
 
-        This function is a coroutine.
+        This function returns a coroutine.
         """
         return self.loop.run_in_executor(None, bcrypt.hash, password)
 
@@ -33,12 +29,11 @@ class UserDB:
 
         :return: The :class:`pantsuBooru.models.User` object inserted.
         """
+        condition = make_comp_search(User, username=username, email=email)
         async with self.db.get_session() as s:
-            q = s.select(User).where((User.email == email) |
-                                     (User.username == username))
-            print(q.generate_sql())
+            q = s.select(User)
+            q.add_condition(condition)
             if (await q.first()):
-                print("fuck")  # this breaks on getting a foreign key somehow
                 raise UserExists
 
         user = User(
@@ -55,43 +50,53 @@ class UserDB:
 
         return user
 
-    def reset_password_user(self, user: User, password: str):
+    async def reset_password(self, *, username: str, email: str, password: str):
         """Reset the password of a user object.
 
-        :param user: The :class:`pantsuBooru.models.User` object to update.
-        :param password: The password to reset to
-        """
-        return self.reset_password(user.username, user.email, password)
+        Atleast one of username or email must be passed.
 
-    async def reset_password(self, username: str, email: str, password: str):
-        """Reset the password of a user object."""
+        :param username: Username of user to reset password of.
+        :param email: Email of user to reset password of.
+        :param password: Password to reset to.
+        """
+        condition = make_comp_search(User, username=username, email=email)
+
         async with self.db.get_session() as s:
             q = s.update.table(User)
-            q.add_condition((User.username == username) &
-                            (User.email == email))
+            q.add_condition(condition)
             q.set(User.password, await self.hash_password(password))
             await q.run()
 
     async def get_user(self, *, username: str=None, email: str=None, id: int=None) -> Optional[User]:
         """Get a user object by username, email or id.
 
-        :param usename: username to request by.
-        :param email: email to request by.
-        :param id: id to request by.
+        Atleast one parameter must be passed.
+
+        :param usename: Username of user to get.
+        :param email: Email of user to get.
+        :param id: Id of user to get.
 
         :return: The :class:`pantsuBooru.models.User` object found.
         """
-        searches = [
-            (getattr(User, k) == v) for k, v in dict(
-                username=username,
-                email=email,
-                id=id,
-            )
-        ]
-        if not searches:
-            raise Exception("At least one attribute is required to search by")
+        condition = make_comp_search(User, username=username, email=email, id=id)
 
         async with self.db.get_session() as s:
             q = s.select(User)
-            q.add_condition(Or(*searches))
+            q.add_condition(condition)
             return await q.first()
+
+    async def delete_user(self, username: str=None, email: str=None, id: int=None):
+        """Delete a user and also delete their corresponding images and comments.
+
+        Atleast one parameter must be passed.
+
+        :param usename: username of user to delete.
+        :param email: email of user to delete.
+        :param id: id of user to delete.
+        """
+        condition = make_comp_search(User, username=username, email=email, id=id)
+
+        async with self.db.get_session() as s:
+            q = s.delete(User)
+            q.add_condition(condition)
+            await q.run()

@@ -3,9 +3,17 @@ from asyncqlio.orm.schema.relationship import ForeignKey, Relationship
 from asyncqlio.orm.schema.table import table_base
 from asyncqlio.orm.schema.types import Integer, Text, Timestamp
 
-from .user_models import User
-
 Table = table_base("pantsu_booru")
+
+
+class User(Table):
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    joined_at = Column(Timestamp)
+    username = Column(Text, nullable=False, unique=True)
+    email = Column(Text, nullable=False, unique=True)
+    password = Column(Text, nullable=False)
+    # posted_images = Relationship(id, "image.poster")
+    # posted_comments = Relationship(id, "comment.poster")
 
 
 class Image(Table):
@@ -14,8 +22,8 @@ class Image(Table):
     author = Column(Text)
     source = Column(Text)
     poster = Column(Integer, foreign_key=ForeignKey(User.id))
-    tags = Relationship(id, 'Tag.image_id')
-    comments = Relationship(id, 'Comment.image_id')
+    # tags = Relationship(id, 'tag.image_id')
+    # comments = Relationship(id, 'comment.image_id')
 
     # All images will be stored on disk in the format {database-id}_(full|thumb).(png|jpeg)
     # full images are stored in PNG format and are converted on upload
@@ -40,6 +48,14 @@ class Comment(Table):
 
 
 """
+CREATE TABLE "user" (
+    id SERIAL PRIMARY KEY,
+    joined_at TIMESTAMP,
+    username TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL
+);
+
 CREATE TABLE "image" (
     id SERIAL PRIMARY KEY,
     posted_at TIMESTAMP,
@@ -51,7 +67,7 @@ CREATE TABLE "image" (
 CREATE TABLE "tag" (
     id SERIAL PRIMARY KEY,
     image_id INTEGER REFERENCES "image" (id) ON DELETE CASCADE,
-    tag TEXT
+    tag TEXT NOT NULL UNIQUE
 );
 
 CREATE TABLE "comment" (
