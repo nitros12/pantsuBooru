@@ -1,19 +1,13 @@
 from datetime import datetime
 from typing import Iterable
 
-from asyncqlio.orm.operators import And
-
 from pantsuBooru.backend.exceptions import TagExists
-from pantsuBooru.models import Image, Tag, User
+from pantsuBooru.models import Image, Tag, User, Comment
 
-from .utils import BaseDatabase, make_comp_search
+from .utils import BaseDatabase
 
 
 class ImageDB(BaseDatabase):
-
-    # TODO: Create objects for images that implement add_tag, etc and have methods
-    #       that would return the model objects instead return these with the db instace loaded
-
     async def add_image(self, author: str, source: str, poster: User, tags: Iterable[str]) -> Image:
         """Add an image.
 
@@ -39,6 +33,7 @@ class ImageDB(BaseDatabase):
 
         return image
 
+    # TODO: rebuild these to take model parameters instead of stuff like image_id
     async def delete_image(self, image_id: int):
         """Delete an image.
 
@@ -81,6 +76,7 @@ class ImageDB(BaseDatabase):
         async with self.db.get_session() as s:
             q = s.select(Tag)
             q.add_condition(Tag.image_id == image_id)
+            # TODO: eventually replace this with a relationship
             res = await q.all()
             return await res.flatten()
 
@@ -93,11 +89,11 @@ class ImageDB(BaseDatabase):
         :raises TagExists: If the tag already exists.
         """
         tag = tag.lower()
-        condition = make_comp_search(Tag, join_op=And, image_id=image_id, tag=tag)
 
         async with self.db.get_session() as s:
             q = s.select(Tag)
-            q.add_condition(condition)
+            q.add_condition(Tag.image_id == image_id)
+            q.add_condition(Tag.tag == tag)
             if (await q.first()):
                 raise TagExists
 
@@ -105,16 +101,27 @@ class ImageDB(BaseDatabase):
             [tag] = await q.run()
             return tag
 
-    async def delete_tag(self, image_id: int, tag: str):
+    async def delete_tag(self, tag: Tag) -> Tag:
         """Delete a tag from an image.
 
-        :param image_id: ID of the image to delete the tag from.
-        :param tag: The tag to delete from the image.
+        :param tag: The :class:`tag to delete.
         """
-        tag = tag.lower()
-        condition = make_comp_search(Tag, join_op=And, image_id=image_id, tag=tag)
 
         async with self.db.get_session() as s:
-            q = s.delete(Tag)
-            q.add_condition(condition)
-            await q.run()
+            return await s.remove(tag)
+
+    async def add_comment(self, image: Image, user: User, comment: str) -> Comment:
+        """Add a comment to an image.
+
+        :param image: The :class:`pantsuBooru.models.Image` object to add the tag to.
+        :param user: The :class:`pantsuBooru.models.User` that added the comment.
+        :param comment: The comment string.
+
+        :returns: The :class:`pantsuBooru.models.Comment` That was added.
+        """
+
+        async with self.db.get_session() as s:
+            comment = Comment(image_id=image.id, poster=user.id, comment=comment)
+            q = s.insert.add_row(comment)
+            [comment] = await q.run()
+            return comment

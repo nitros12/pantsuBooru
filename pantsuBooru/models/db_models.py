@@ -12,8 +12,8 @@ class User(Table):
     username = Column(Text, nullable=False, unique=True)
     email = Column(Text, nullable=False, unique=True)
     password = Column(Text, nullable=False)
-    # posted_images = Relationship(id, "image.poster")
-    # posted_comments = Relationship(id, "comment.poster")
+    # posted_images = Relationship(id, "Image.poster")
+    # posted_comments = Relationship(id, "Comment.poster")
 
 
 class Image(Table):
@@ -22,8 +22,8 @@ class Image(Table):
     author = Column(Text)
     source = Column(Text)
     poster = Column(Integer, foreign_key=ForeignKey(User.id))
-    # tags = Relationship(id, 'tag.image_id')
-    # comments = Relationship(id, 'comment.image_id')
+    # tags = Relationship(id, 'Tag.image_id')
+    # comments = Relationship(id, 'Comment.image_id')
 
     # All images will be stored on disk in the format {database-id}_(full|thumb).(png|jpeg)
     # full images are stored in PNG format and are converted on upload
@@ -34,7 +34,7 @@ class Image(Table):
 class Tag(Table):
     id = Column(Integer, primary_key=True, autoincrement=True)
     image_id = Column(Integer, foreign_key=ForeignKey(Image.id))
-    tag = Column(Text)
+    tag = Column(Text, unique=True)
 
     # Tags are stored in the format | id | image_id | tag_string |
     # this way we can enumerate tags for an image, etc
