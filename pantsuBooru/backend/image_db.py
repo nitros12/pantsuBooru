@@ -33,78 +33,76 @@ class ImageDB(BaseDatabase):
 
         return image
 
-    # TODO: rebuild these to take model parameters instead of stuff like image_id
-    async def delete_image(self, image_id: int):
+    async def delete_image(self, image: Image) -> Image:
         """Delete an image.
 
-        :param image_id: ID of image to delete.
+        :param image: image to delete.
         """
         async with self.db.get_session() as s:
-            q = s.delete(Image)
-            q.add_condition(Image.id == image_id)
-            await q.run()
+            return await s.remove(image)
 
-    async def add_tags(self, image_id: int, *tags: str) -> [Tag]:
+    async def add_tags(self, image: Image, *tags: str) -> [Tag]:
         """Insert multiple tags onto an image.
 
         Ignores tag if it already exists on an image.
         Note: This is expensive as it requires querying for existing tags and removing duplicates.
 
-        :param image_id: ID of the image to add the tags to.
+        :param image: Image to add the tags to.
         :param tags: Iterable of strings to add.
 
-        :returns int: Number of tags added.
+        :return: List of added tags.
         """
         # NOTE: I hope there is a better way to do this
         tags = map(str.lower, tags)
-        already_has = (i.tag for i in (await self.get_tags(image_id)))
+        already_has = (i.tag for i in (await self.get_tags(image)))
 
         no_dupes = set(tags) - set(already_has)
 
-        tags = (Tag(image_id=image_id, tag=i) for i in no_dupes)
+        tags = (Tag(image_id=image.id, tag=i) for i in no_dupes)
 
         async with self.db.get_session() as s:
             q = s.insert
             q.rows(*tags)
             return await q.run()
 
-    async def get_tags(self, image_id: int) -> [Tag]:
+    async def get_tags(self, image: Image) -> [Tag]:
         """Get the tags on an image.
 
-        :param image_id: ID of image to get tags from.
+        :param image: Image to get tags from.
+
+        :return: List of tags on the image.
         """
         async with self.db.get_session() as s:
             q = s.select(Tag)
-            q.add_condition(Tag.image_id == image_id)
+            q.add_condition(Tag.image_id == image.id)
             # TODO: eventually replace this with a relationship
             res = await q.all()
             return await res.flatten()
 
-    async def add_tag(self, image_id: int, tag: str):
+    async def add_tag(self, tag: Tag):
         """Insert a tag onto an image.
 
-        :param image_id: ID of the image to add the tag to.
         :param tag: The tag to add to the image.
 
         :raises TagExists: If the tag already exists.
         """
-        tag = tag.lower()
-
         async with self.db.get_session() as s:
             q = s.select(Tag)
-            q.add_condition(Tag.image_id == image_id)
-            q.add_condition(Tag.tag == tag)
+            q.add_condition(Tag.image_id == tag.image_id)
+            q.add_condition(Tag.tag == tag.tag)
             if (await q.first()):
                 raise TagExists
 
-            q = s.insert.add_row(Tag(image_id=image_id, tag=tag))
+            q = s.insert.add_row(tag)
             [tag] = await q.run()
             return tag
 
     async def delete_tag(self, tag: Tag) -> Tag:
         """Delete a tag from an image.
 
-        :param tag: The :class:`tag to delete.
+        :param tag: The :class:`pantsuBooru.models.Tag` to delete.
+
+        :return: The deleted Tag.
         """
 
         async with self.db.get_session() as s:
@@ -117,11 +115,34 @@ class ImageDB(BaseDatabase):
         :param user: The :class:`pantsuBooru.models.User` that added the comment.
         :param comment: The comment string.
 
-        :returns: The :class:`pantsuBooru.models.Comment` That was added.
+        :return: The comment that was added.
         """
 
         async with self.db.get_session() as s:
-            comment = Comment(image_id=image.id, poster=user.id, comment=comment)
+            comment = Comment(image_id=image.id, poster=user.id, text=comment)
             q = s.insert.add_row(comment)
             [comment] = await q.run()
             return comment
+
+    async def get_comments(self, image: Image) -> [Comment]:
+        """Get a the comments on an image.
+
+        :param image: Image object to get comments of.
+
+        :return: List of comment objects."""
+        async with self.db.get_session() as s:
+            q = s.select(Comment)
+            q.add_condition(Comment.image_id == image.id)
+            # TODO: eventually replace this with a relationship
+            res = await q.all()
+            return await res.flatten()
+
+    async def delete_comment(self, comment: Comment) -> Comment:
+        """Delete a comment.
+
+        :param comment: The :class:`pantsuBooru.models.Comment` to delete.
+
+        :return: The deleted comment.
+        """
+        async with self.db.get_session() as s:
+            return await s.remove(comment)

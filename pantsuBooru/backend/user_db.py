@@ -4,7 +4,7 @@ from typing import Optional
 from passlib.hash import bcrypt
 
 from pantsuBooru.backend.exceptions import UserExists
-from pantsuBooru.models import User
+from pantsuBooru.models import User, Comment, Image
 
 from .utils import BaseDatabase, make_comp_search
 
@@ -50,22 +50,17 @@ class UserDB(BaseDatabase):
 
         return user
 
-    async def reset_password(self, *, username: str, email: str, password: str):
+    async def reset_password(self, *, user: User, password: str):
         """Reset the password of a user object.
 
-        Atleast one of username or email must be passed.
-
-        :param username: Username of user to reset password of.
-        :param email: Email of user to reset password of.
-        :param password: Password to reset to.
+        :param user: The user to reset the password of.
+        :param password: The password to reset to.
         """
-        condition = make_comp_search(User, username=username, email=email)
+        hash = await self.hash_password(password)
+        user.password = hash
 
         async with self.db.get_session() as s:
-            q = s.update.table(User)
-            q.add_condition(condition)
-            q.set(User.password, await self.hash_password(password))
-            await q.run()
+            return await s.merge(user)
 
     async def get_user(self, *, username: str=None, email: str=None, id: int=None) -> Optional[User]:
         """Get a user object by username, email or id.
@@ -85,18 +80,37 @@ class UserDB(BaseDatabase):
             q.add_condition(condition)
             return await q.first()
 
-    async def delete_user(self, username: str=None, email: str=None, id: int=None):
+    async def delete_user(self, user: User) -> User:
         """Delete a user and also delete their corresponding images and comments.
 
-        Atleast one parameter must be passed.
-
-        :param usename: username of user to delete.
-        :param email: email of user to delete.
-        :param id: id of user to delete.
+        :param user: The user object to delete.
         """
-        condition = make_comp_search(User, username=username, email=email, id=id)
 
         async with self.db.get_session() as s:
-            q = s.delete(User)
-            q.add_condition(condition)
-            await q.run()
+            return await s.remove(user)
+
+    async def get_comments(self, user: User) -> [Comment]:
+        """Get a users comments.
+
+        :param user: User object to get comments of.
+
+        :return: List of comment objects."""
+        async with self.db.get_session() as s:
+            q = s.select(Comment)
+            q.add_condition(Comment.poster == user.id)
+            # TODO: eventually replace this with a relationship
+            res = await q.all()
+            return await res.flatten()
+
+    async def get_images(self, user: User) -> [Image]:
+        """Get a users images.
+
+        :param user: User object to get images of.
+
+        :return: List of image objects."""
+        async with self.db.get_session() as s:
+            q = s.select(Image)
+            q.add_condition(Image.poster == user.id)
+            # TODO: eventually replace this with a relationship
+            res = await q.all()
+            return await res.flatten()
