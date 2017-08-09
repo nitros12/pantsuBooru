@@ -3,10 +3,12 @@ from typing import Union
 
 from asyncqlio.db import DatabaseInterface
 from asyncqlio.orm.operators import And, ComparisonOp, Eq, Or
-from asyncqlio.orm.schema.table import Table
+from asyncqlio.orm.schema.table import Table as SchemaTable
+
+from pantsuBooru.models import Table
 
 
-def make_comp_search(table: Table, comp_op: ComparisonOp=Eq, join_op: Union[Or, And]=Or, **matches) -> Union[Or, And]:
+def make_comp_search(table: SchemaTable, comp_op: ComparisonOp=Eq, join_op: Union[Or, And]=Or, **matches) -> Union[Or, And]:
     """Build a condition from a dictionary of matched conditions.
 
     :param table: The table to build on.
@@ -25,4 +27,5 @@ def make_comp_search(table: Table, comp_op: ComparisonOp=Eq, join_op: Union[Or, 
 class BaseDatabase:
     def __init__(self, db: DatabaseInterface, loop=None):
         self.db = db
+        self.db.bind_tables(Table)
         self.loop = asyncio.get_event_loop()
