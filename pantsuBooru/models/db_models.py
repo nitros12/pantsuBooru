@@ -22,7 +22,7 @@ class Image(Table):
     author = Column(Text)
     source = Column(Text)
     poster = Column(Integer, foreign_key=ForeignKey(User.id))
-    tags = Relationship(id, "tag.image_id", load="joined")
+    tags = Relationship(id, "imagetag.image_id", load="joined")
     comments = Relationship(id, "comment.image_id", load="joined")
 
     # All images will be stored on disk in the format {database-id}_(full|thumb).(png|jpeg)
@@ -33,11 +33,14 @@ class Image(Table):
 
 class Tag(Table):
     id = Column(Integer, primary_key=True, autoincrement=True)
-    image_id = Column(Integer, foreign_key=ForeignKey(Image.id))
     tag = Column(Text, unique=True)
+    images = Relationship(id, "imagetag.tag_id")
 
-    # Tags are stored in the format | id | image_id | tag_string |
-    # this way we can enumerate tags for an image, etc
+
+class ImageTag(Table):
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tag_id = Column(Integer, foreign_key=ForeignKey(Tag.id))
+    image_id = Column(Integer, foreign_key=ForeignKey(Image.id))
 
 
 class Comment(Table):
@@ -66,8 +69,13 @@ CREATE TABLE "image" (
 
 CREATE TABLE "tag" (
     id SERIAL PRIMARY KEY,
-    image_id INTEGER REFERENCES "image" (id) ON DELETE CASCADE,
     tag TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE "imagetag" (
+    id SERIAL PRIMARY KEY,
+    tag_id INTEGER REFERENCES "tag" (id) ON DELETE CASCADE,
+    image_id INTEGER REFERENCES "image" (id) ON DELETE CASCADE
 );
 
 CREATE TABLE "comment" (

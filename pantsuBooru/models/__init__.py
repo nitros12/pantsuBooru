@@ -1,1 +1,1 @@
-from .db_models import Image, Tag, Comment, User, Table
+from .db_models import Image, Tag, Comment, User, Table, ImageTag

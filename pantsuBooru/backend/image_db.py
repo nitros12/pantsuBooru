@@ -2,9 +2,11 @@ from datetime import datetime
 from typing import Iterable
 
 from pantsuBooru.backend.exceptions import TagExists
-from pantsuBooru.models import Image, Tag, User, Comment
+from pantsuBooru.models import Image, Tag, ImageTag, User, Comment
 
 from .utils import BaseDatabase
+
+from asyncqlio.orm.operators import In
 
 
 class ImageDB(BaseDatabase):
@@ -29,12 +31,9 @@ class ImageDB(BaseDatabase):
             poster=user_id)
 
         async with self.db.get_session() as s:
-            q = s.insert.add_row(image)
-            [image] = await q  # unsure
-            tags = (Tag(image_id=image.id, tag=i.lower()) for i in tags)
-            q = s.insert.rows(*tags)
-            await q.run()
+            [image] = await s.insert.add_row(image)
 
+        await self.insert_tags(image.id, *tags)
         return image
 
     async def get_image(self, image_id: int) -> Image:
@@ -47,6 +46,19 @@ class ImageDB(BaseDatabase):
         async with self.db.get_session() as s:
             return await s.select(Image).where(Image.id == image_id).first()
 
+    async def get_many_images(self, *image_ids: int) -> [Image]:
+        """Retrieve images given a list of image IDs.
+        The order of images retrieved is preserved
+
+        :param image_ids: List of image IDs to fetch.
+
+        :return: A list of :class:`pantsuBooru.models.Image`.
+        """
+        async with self.db.get_session() as s:
+            images = await s.select(Image).where(In(Image.id, image_ids)).all()
+            images = await images.flatten()
+            return sorted(images, key=lambda x: image_ids.index(x.id))
+
     async def delete_image(self, image_id: int) -> Image:
         """Delete an image.
 
@@ -55,56 +67,54 @@ class ImageDB(BaseDatabase):
         async with self.db.get_session() as s:
             return await s.remove(Image(id=image_id))
 
-    async def add_tags(self, image_id: int, *tags: str) -> [Tag]:
-        """Insert multiple tags onto an image.
+    async def insert_tags(self, image_id, *tags: str):
+        """Insert tags onto an image.
 
-        Ignores tag if it already exists on an image.
-        Note: This is expensive as it requires querying for existing tags and removing duplicates.
+        Should only be done when the image has NO tags.
+
+        :param image_id: ID of image to add tags to.
+        :param tags: Tags to add to image.
+        """
+        tags = list(map(str.lower, tags))
+
+        async with self.db.get_session() as s:
+            q = s.select(Tag).where(In(Tag.tag, tags))
+            print(q.generate_sql())
+            existing_tags = await (await q.all()).flatten()
+            # Tags that already exist in the db
+            to_create = set(tags) - set(i.tag for i in existing_tags)
+            # Tags that dont exist and need to be created
+
+            created = await s.insert.rows(*(Tag(tag=i)
+                                            for i in to_create)).run()
+
+            tags = existing_tags + created
+
+            await s.insert.rows(*(ImageTag(tag_id=i.id, image_id=image_id)
+                                  for i in tags))
+
+    async def replace_tags(self, image_id: int, *tags: str):
+        """Replace the tags on an image.
 
         :param image_id: ID of image to add tags to.
         :param tags: Iterable of strings to add.
-
-        :return: List of added tags.
         """
-        # NOTE: I hope there is a better way to do this
-        tags = map(str.lower, tags)
-        already_has = (i.tag for i in (await self.get_image(image_id)).tags)
+        await self.delete_all_tags(image_id)
+        await self.insert_tags(image_id, *tags)
 
-        no_dupes = set(tags) - set(already_has)
+    async def delete_all_tags(self, image_id: int) -> [Tag]:
+        """Delete all the tags on an image.
 
-        tags = (Tag(image_id=image_id, tag=i) for i in no_dupes)
-
-        async with self.db.get_session() as s:
-            q = s.insert
-            q.rows(*tags)
-            return await q.run()
-
-    async def add_tag(self, tag: Tag):
-        """Insert a tag onto an image.
-
-        :param tag: The tag to add to the image.
-
-        :raises TagExists: If the tag already exists.
+        :param image_id: ID of the image to remove tags of.
         """
         async with self.db.get_session() as s:
-            q = s.select(Tag)
-            q.add_condition(Tag.image_id == tag.image_id)
-            q.add_condition(Tag.tag == tag.tag)
-            if (await q.first()):
-                raise TagExists
-
-            q = s.insert.add_row(tag)
-            [tag] = await q.run()
-            return tag
-
-    async def delete_tag(self, tag_id: int) -> Tag:
-        """Delete a tag from an image.
-
-        :param tag_id: ID of the tag to delete.
-        :return: The :class:`pantsuBooru.models.Tag` that was deleted.
-        """
-        async with self.db.get_session() as s:
-            return await s.remove(Tag(id=tag_id))
+            q = s.delete(ImageTag).where(ImageTag.image_id == image_id)
+            deleted = await q.run()
+            await s.execute("""
+                DELETE FROM "tag"
+                WHERE NOT EXISTS (SELECT 1 from "imagetag"
+                                  WHERE "imagetag"."tag_id" = "tag"."id");""")
+            # run cleanup on tags that dont have any matched images
 
     async def add_comment(self, image_id: int, user_id: int,
                           comment: str) -> Comment:
@@ -131,3 +141,32 @@ class ImageDB(BaseDatabase):
         """
         async with self.db.get_session() as s:
             return await s.remove(Comment(id=comment_id))
+
+    async def search_tags(self, *tags: str, limit=100) -> [Image]:
+        """Search images by tags.
+
+        :param tags: Tags to search for.
+        :param limit: Limit of images to return.
+
+        :return: List of :class:`pantsuBooru.models.Image` ordered by most matching tags.
+        """
+        tags = list(map(str.lower, tags))
+
+        async with self.db.get_session() as s:
+            tags_v = [f"${i}" for i, _ in enumerate(tags, 1)]
+            tags_fmt = ", ".join(tags_v)
+
+            query = f"""SELECT "image"."id"
+            FROM "imagetag", "image", "tag"
+            WHERE "imagetag"."tag_id" = "tag"."id"
+                AND ("tag"."tag" IN ({tags_fmt}))
+                AND "image"."id" = "imagetag"."image_id"
+            GROUP BY "image"."id"
+            ORDER BY COUNT(image.id) DESC
+            LIMIT {limit}
+            """
+
+            async with await s.cursor(query, dict(zip(tags_v, tags))) as c:
+                image_ids = [i.get("id") async for i in c]
+                print(image_ids)
+            return await self.get_many_images(*image_ids)
