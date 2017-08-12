@@ -8,7 +8,7 @@ from pantsuBooru import backend
 
 from pantsuBooru.models import Tag
 
-# logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
 db = DatabaseInterface(
     "postgresql://postgres:postgres@127.0.0.1:5432/pantsuBooru")
@@ -27,7 +27,7 @@ async def main():
         wew = await images.search_tags("wew")
         print(wew)
         image_get = await images.get_image(image.id)
-        print(image_get.tags)
+        print([i.tag for i in image_get.tags])
         print(image_get.comments)
     except Exception as e:
         raise e

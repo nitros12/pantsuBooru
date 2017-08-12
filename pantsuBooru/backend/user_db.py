@@ -31,9 +31,6 @@ class UserDB(BaseDatabase):
         """
         condition = make_comp_search(User, username=username, email=email)
 
-        if await self.get_user(username=username, email=email):
-            raise UserExists
-
         user = User(
             joined_at=datetime.utcnow(),
             username=username,
@@ -41,24 +38,36 @@ class UserDB(BaseDatabase):
             password=await self.hash_password(password))
 
         async with self.db.get_session() as s:
+            user_sql = """SELECT 1
+                          FROM "user"
+                          WHERE "user"."username" = $1
+                                OR "user"."email" = $2"""
+            q = await s.cursor(user_sql, {"$1": username, "$2": email})
+            async with q as c:
+                if (await c.fetch_row()) is not None:
+                    raise UserExists
+
             q = s.insert
             q.add_row(user)
             [user] = await q.run()
 
         return user
 
-    async def reset_password(self, *, user_id: int, password: str):
+    async def reset_password(self, *, user_id: int, password: str) -> str:
         """Reset the password of a user object.
 
         :param user_id: ID of the user to reset the password of.
         :param password: The password to reset to.
+
+        :return: The hashed password.
         """
         hash = await self.hash_password(password)
-        user.password = hash
 
         async with self.db.get_session() as s:
-            return await s.merge(user)
+            await s.merge(user)
+        return hash
 
+    # TODO: Create cache for this
     async def get_user(self,
                        *,
                        username: str=None,

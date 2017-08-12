@@ -55,7 +55,8 @@ class ImageDB(BaseDatabase):
         :return: A list of :class:`pantsuBooru.models.Image`.
         """
         async with self.db.get_session() as s:
-            images = await s.select(Image).where(In(Image.id, image_ids)).all()
+            images = await s.select(Image).where(
+                Image.id.in_(*image_ids)).all()
             images = await images.flatten()
             return sorted(images, key=lambda x: image_ids.index(x.id))
 
@@ -78,8 +79,7 @@ class ImageDB(BaseDatabase):
         tags = list(map(str.lower, tags))
 
         async with self.db.get_session() as s:
-            q = s.select(Tag).where(In(Tag.tag, tags))
-            print(q.generate_sql())
+            q = s.select(Tag).where(Tag.tag.in_(*tags))
             existing_tags = await (await q.all()).flatten()
             # Tags that already exist in the db
             to_create = set(tags) - set(i.tag for i in existing_tags)
@@ -100,16 +100,16 @@ class ImageDB(BaseDatabase):
         :param tags: Iterable of strings to add.
         """
         await self.delete_all_tags(image_id)
-        await self.insert_tags(image_id, *tags)
+        return await self.insert_tags(image_id, *tags)
 
-    async def delete_all_tags(self, image_id: int) -> [Tag]:
+    async def delete_all_tags(self, *image_ids: int):
         """Delete all the tags on an image.
 
-        :param image_id: ID of the image to remove tags of.
+        :param image_ids: IDs of the images to remove tags of.
         """
         async with self.db.get_session() as s:
-            q = s.delete(ImageTag).where(ImageTag.image_id == image_id)
-            deleted = await q.run()
+            await s.delete(ImageTag).where(
+                ImageTag.image_id.in_(*image_ids)).run()
             await s.execute("""
                 DELETE FROM "tag"
                 WHERE NOT EXISTS (SELECT 1 from "imagetag"
@@ -153,6 +153,7 @@ class ImageDB(BaseDatabase):
         tags = list(map(str.lower, tags))
 
         async with self.db.get_session() as s:
+            # Shit
             tags_v = [f"${i}" for i, _ in enumerate(tags, 1)]
             tags_fmt = ", ".join(tags_v)
 
@@ -162,11 +163,14 @@ class ImageDB(BaseDatabase):
                 AND ("tag"."tag" IN ({tags_fmt}))
                 AND "image"."id" = "imagetag"."image_id"
             GROUP BY "image"."id"
-            ORDER BY COUNT(image.id) DESC
+            HAVING COUNT("image"."id") > 0
+            ORDER BY COUNT("image"."id") DESC
             LIMIT {limit}
             """
 
-            async with await s.cursor(query, dict(zip(tags_v, tags))) as c:
+            q = await s.cursor(query, dict(zip(tags_v, tags)))
+            async with q as c:
                 image_ids = [i.get("id") async for i in c]
-                print(image_ids)
+            # TODO: eventually just do this all in the ORM
+            # or atleast only do a single query
             return await self.get_many_images(*image_ids)

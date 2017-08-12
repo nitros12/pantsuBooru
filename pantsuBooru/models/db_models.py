@@ -12,6 +12,7 @@ class User(Table):
     username = Column(Text, nullable=False, unique=True)
     email = Column(Text, nullable=False, unique=True)
     password = Column(Text, nullable=False)
+
     posted_images = Relationship(id, "image.poster", load="joined")
     posted_comments = Relationship(id, "comment.poster", load="joined")
 
@@ -21,7 +22,10 @@ class Image(Table):
     posted_at = Column(Timestamp)
     author = Column(Text)
     source = Column(Text)
-    poster = Column(Integer, foreign_key=ForeignKey(User.id))
+
+    poster_id = Column(Integer, foreign_key=ForeignKey(User.id))
+
+    poster = Relationship(poster_id, User.id, load="joined", use_iter=False)
     tags = Relationship(id, "imagetag.image_id", load="joined")
     comments = Relationship(id, "comment.image_id", load="joined")
 
@@ -34,20 +38,25 @@ class Image(Table):
 class Tag(Table):
     id = Column(Integer, primary_key=True, autoincrement=True)
     tag = Column(Text, unique=True)
+
     images = Relationship(id, "imagetag.tag_id")
 
 
 class ImageTag(Table):
     id = Column(Integer, primary_key=True, autoincrement=True)
+
     tag_id = Column(Integer, foreign_key=ForeignKey(Tag.id))
     image_id = Column(Integer, foreign_key=ForeignKey(Image.id))
+
+    tag = Relationship(tag_id, Tag.id, load="joined", use_iter=False)
 
 
 class Comment(Table):
     id = Column(Integer, primary_key=True, autoincrement=True)
+    text = Column(Text)
+
     image_id = Column(Integer, foreign_key=ForeignKey(Image.id))
     poster = Column(Integer, foreign_key=ForeignKey(User.id))
-    text = Column(Text)
 
 
 """
